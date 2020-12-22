@@ -7,3 +7,13 @@ module "vpc_networking" {
 
   app_name = var.app_name
 }
+
+module "eks" {
+  source = "./tf_aws/eks"
+
+  app_name = var.app_name
+
+  depends_on = [
+    module.vpc_networking
+  ]
+}
