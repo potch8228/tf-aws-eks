@@ -42,6 +42,10 @@ users:
 KUBECONFIG
 }
 
+output "eks_cluster_name" {
+  value = aws_eks_cluster.eks_cluster.name
+}
+
 output "config_map_aws_auth" {
   value = local.config_map_aws_auth
 }

@@ -41,8 +41,7 @@ resource "aws_iam_role" "iam_role_eks_nodes" {
       Principal = {
         Service = "ec2.amazonaws.com"
       }
-      }
-    ]
+    }]
     Version = "2012-10-17"
   })
 }

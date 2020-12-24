@@ -47,62 +47,39 @@ resource "aws_eks_cluster" "eks_cluster" {
   ]
 }
 
-# EKS Nodes for Kubernetes Pods for core functionality management
-# ... but this can be replaced with Fargate profile below...
-# resource "aws_eks_node_group" "eks_worker_nodes" {
-#   cluster_name    = aws_eks_cluster.eks_cluster.name
-#   node_group_name = format("%s_eks_worker_nodes", var.app_name)
-#   node_role_arn   = aws_iam_role.iam_role_eks_nodes.arn
-#   subnet_ids      = data.aws_subnet_ids.private_subnets.ids
-# 
-#   scaling_config {
-#     desired_size = 1
-#     max_size     = 1
-#     min_size     = 1
-#   }
-# 
-#   ami_type       = "AL2_ARM_64"
-#   instance_types = ["c6g.medium"]
-# 
-#   tags = {
-#     Name = format("%s_eks_worker_nodes", var.app_name)
-#   }
-# 
-#   depends_on = [
-#     aws_eks_cluster.eks_cluster,
-#     aws_iam_role_policy_attachment.iam_role_attach-AmazonEKSWorkerNodePolicy,
-#     aws_iam_role_policy_attachment.iam_role_attach-AmazonEKS_CNI_Policy,
-#     aws_iam_role_policy_attachment.iam_role_attach-AmazonEC2ContainerRegistryReadOnly,
-#   ]
-# 
-#   lifecycle {
-#     ignore_changes = [scaling_config[0].desired_size]
-#   }
-# }
+# ======= EKS Nodes for Kubernetes Pods for core functionality management =====
+resource "aws_eks_node_group" "eks_worker_nodes" {
+  cluster_name    = aws_eks_cluster.eks_cluster.name
+  node_group_name = format("%s_eks_worker_nodes", var.app_name)
+  node_role_arn   = aws_iam_role.iam_role_eks_nodes.arn
+  subnet_ids      = data.aws_subnet_ids.private_subnets.ids
 
-resource "aws_eks_fargate_profile" "eks_fargate_system_coredns_nodes" {
-  cluster_name           = aws_eks_cluster.eks_cluster.name
-  fargate_profile_name   = format("%s_eks_fargate_system_coredns_nodes", var.app_name)
-  pod_execution_role_arn = aws_iam_role.iam_role_eks_fargate.arn
-  subnet_ids             = data.aws_subnet_ids.private_subnets.ids
+  scaling_config {
+    desired_size = 3 # if t3.medium is selected, 3 was enough but 2
+    max_size     = 5
+    min_size     = 2
+  }
 
-  selector {
-    namespace = "kube-system"
-    labels = {
-      k8s-app = "kube-dns"
-    }
+  ami_type       = "AL2_x86_64"
+  instance_types = ["t3.medium"]
+
+  tags = {
+    Name = format("%s_eks_worker_nodes", var.app_name)
   }
 
   depends_on = [
     aws_eks_cluster.eks_cluster,
-    aws_iam_role_policy_attachment.iam_role_attach-AmazonEKSFargatePodExecutionRolePolicy,
+    aws_iam_role_policy_attachment.iam_role_attach-AmazonEKSWorkerNodePolicy,
+    aws_iam_role_policy_attachment.iam_role_attach-AmazonEKS_CNI_Policy,
+    aws_iam_role_policy_attachment.iam_role_attach-AmazonEC2ContainerRegistryReadOnly,
   ]
 
-  tags = {
-    Name = format("%s_eks_fargate_system_coredns_nodes", var.app_name)
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
   }
 }
 
+# =========== EKS Fargate profile for Application Kubernetes Pods ==============
 resource "aws_eks_fargate_profile" "eks_fargate_app_nodes" {
   cluster_name           = aws_eks_cluster.eks_cluster.name
   fargate_profile_name   = format("%s_eks_fargate_app_nodes", var.app_name)

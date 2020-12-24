@@ -1,5 +1,5 @@
 # Basic Networking Environment (a.k.a Sandbox)
-# 65534 Hosts can be hosted in: 10.0.0.1 - 10.0.255.254
+# 65534 hosts can be hosted in: 10.0.0.1 - 10.0.255.254
 resource "aws_vpc" "vpc" {
   cidr_block                       = "10.0.0.0/16"
   assign_generated_ipv6_cidr_block = true
@@ -15,13 +15,15 @@ resource "aws_vpc" "vpc" {
 
 # Create a subnet to launch our instances into
 # ap-northeast-1 has no "AZ-B" (as of 2020/12)
-# Split VPC subnet into 4, to have both public and private subnets and 
+# Split VPC subnet into 6, to have both public and private subnets and
 # the redundancy
+
+# Because the mask bit is the power of 2, 2 subnets are left unused
+# Each subnet will have 8190 hosts
 
 resource "aws_subnet" "sub_public_a" {
   vpc_id = aws_vpc.vpc.id
-  # 10.0.0.1 - 10.0.63.254 = 16382 Host can be exist
-  cidr_block              = "10.0.0.0/18"
+  cidr_block              = "10.0.0.0/19"
   availability_zone       = "ap-northeast-1a"
   map_public_ip_on_launch = true
 
@@ -29,25 +31,13 @@ resource "aws_subnet" "sub_public_a" {
     Name                                                         = format("%s_sub_public_a", var.app_name)
     Tier                                                         = "Public"
     format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
-  }
-}
-
-resource "aws_subnet" "sub_private_a" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = "10.0.64.0/18"
-  availability_zone       = "ap-northeast-1a"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name                                                         = format("%s_sub_private_a", var.app_name)
-    Tier                                                         = "Private"
-    format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/elb" = 1
   }
 }
 
 resource "aws_subnet" "sub_public_c" {
   vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = "10.0.128.0/18"
+  cidr_block              = "10.0.32.0/19"
   availability_zone       = "ap-northeast-1c"
   map_public_ip_on_launch = true
 
@@ -55,19 +45,60 @@ resource "aws_subnet" "sub_public_c" {
     Name                                                         = format("%s_sub_public_c", var.app_name)
     Tier                                                         = "Public"
     format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/elb" = 1
+  }
+}
+
+resource "aws_subnet" "sub_public_d" {
+  vpc_id                  = aws_vpc.vpc.id
+  cidr_block              = "10.0.64.0/19"
+  availability_zone       = "ap-northeast-1d"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name                                                         = format("%s_sub_public_d", var.app_name)
+    Tier                                                         = "Public"
+    format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/elb" = 1
+  }
+}
+
+resource "aws_subnet" "sub_private_a" {
+  vpc_id                  = aws_vpc.vpc.id
+  cidr_block              = "10.0.96.0/19"
+  availability_zone       = "ap-northeast-1a"
+
+  tags = {
+    Name                                                         = format("%s_sub_private_a", var.app_name)
+    Tier                                                         = "Private"
+    format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/internal-elb" = 1
+  }
+}
+
+resource "aws_subnet" "sub_private_c" {
+  vpc_id                  = aws_vpc.vpc.id
+  cidr_block              = "10.0.128.0/19"
+  availability_zone       = "ap-northeast-1c"
+
+  tags = {
+    Name                                                         = format("%s_sub_private_c", var.app_name)
+    Tier                                                         = "Private"
+    format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/internal-elb" = 1
   }
 }
 
 resource "aws_subnet" "sub_private_d" {
   vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = "10.0.192.0/18"
+  cidr_block              = "10.0.160.0/19"
   availability_zone       = "ap-northeast-1d"
-  map_public_ip_on_launch = true
 
   tags = {
     Name                                                         = format("%s_sub_private_d", var.app_name)
     Tier                                                         = "Private"
     format("kubernetes.io/cluster/%s_eks_cluster", var.app_name) = "shared"
+    "kubernetes.io/role/internal-elb" = 1
   }
 }
 
@@ -142,8 +173,18 @@ resource "aws_route_table_association" "rt_assoc_public_c" {
   route_table_id = aws_route_table.rt_table_public.id
 }
 
+resource "aws_route_table_association" "rt_assoc_public_d" {
+  subnet_id      = aws_subnet.sub_public_d.id
+  route_table_id = aws_route_table.rt_table_public.id
+}
+
 resource "aws_route_table_association" "rt_assoc_private_a" {
   subnet_id      = aws_subnet.sub_private_a.id
+  route_table_id = aws_route_table.rt_table_private.id
+}
+
+resource "aws_route_table_association" "rt_assoc_private_c" {
+  subnet_id      = aws_subnet.sub_private_c.id
   route_table_id = aws_route_table.rt_table_private.id
 }
 
@@ -162,7 +203,9 @@ resource "aws_network_acl" "net_acl_public" {
   subnet_ids = [
     aws_subnet.sub_public_a.id,
     aws_subnet.sub_public_c.id,
+    aws_subnet.sub_public_d.id,
     aws_subnet.sub_private_a.id,
+    aws_subnet.sub_private_c.id,
     aws_subnet.sub_private_d.id
   ]
 

@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 0.13"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "3.21.0"
+    }
+  }
+}
+
 provider "aws" {
   region = "ap-northeast-1"
 }
@@ -16,4 +27,13 @@ module "eks" {
   depends_on = [
     module.vpc_networking
   ]
+}
+
+module "k8s" {
+  source = "./tf_aws/k8s"
+
+  app_name = var.app_name
+
+  # dependency trigger
+  eks_cluster_name = module.eks.eks_cluster_name
 }
