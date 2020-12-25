@@ -47,6 +47,39 @@ resource "aws_eks_cluster" "eks_cluster" {
   ]
 }
 
+data "tls_certificate" "eks_cluster_tls_cert" {
+  url = aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "iam_oidc_eks_cluster" {
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks_cluster_tls_cert.certificates[0].sha1_fingerprint]
+  url             = aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
+}
+
+data "aws_iam_policy_document" "eks_cluster_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.iam_oidc_eks_cluster.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-node"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.iam_oidc_eks_cluster.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "eks_cluster_iam_role" {
+  assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume_role_policy.json
+  name               = format("%s_eks_cluster_iam_role", var.app_name)
+}
+
 # ======= EKS Nodes for Kubernetes Pods for core functionality management =====
 resource "aws_eks_node_group" "eks_worker_nodes" {
   cluster_name    = aws_eks_cluster.eks_cluster.name
@@ -55,7 +88,7 @@ resource "aws_eks_node_group" "eks_worker_nodes" {
   subnet_ids      = data.aws_subnet_ids.private_subnets.ids
 
   scaling_config {
-    desired_size = 3 # if t3.medium is selected, 3 was enough but 2
+    desired_size = 2
     max_size     = 5
     min_size     = 2
   }

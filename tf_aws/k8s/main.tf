@@ -1,9 +1,17 @@
+# Note: ALL Kubernetes directly related resources (= ones not aws resources with exception)
+#       needs AWS EKS cluster to be built. But cross module dependency is not
+#       easy to create because of dependency providers.
+#       Need to use null_resource.dependency to wait and organize build/destruction
+#       order.
+
 # ======================== Setup main application namespace ===================
 # mainly intended for Fargate profile
 resource "kubernetes_namespace" "app_ns" {
   metadata {
     name = format("%s-apps", replace(var.app_name, "_", "-"))
   }
+
+  depends_on = [null_resource.dependency]
 }
 
 # ============================ Setup autoscaler ================================
@@ -39,11 +47,20 @@ resource "helm_release" "helm_cluster_autoscaler" {
     name  = "awsRegion"
     value = "ap-northeast-1"
   }
+
+  depends_on = [null_resource.dependency]
 }
 
 # ============================ Setup metrics server ============================
-resource "kubectl_manifest" "metrics_server" {
-  yaml_body = file("${path.module}/k8s_configs/metrics_server_0_4_1.yaml")
+resource "helm_release" "heml_metrics_server" {
+  name       = "metrics-server"
+  repository = "https://charts.bitnami.com/bitnami"
+  chart      = "metrics-server"
+  version    = "5.3.3"
+
+  namespace = "kube-system"
+
+  depends_on = [null_resource.dependency]
 }
 
 # ======================== Setup Prometheus monitoring ========================
@@ -65,6 +82,8 @@ resource "helm_release" "helm_prometheus" {
     name  = "server.persistentVolume.storageClass"
     value = "gp2"
   }
+
+  depends_on = [null_resource.dependency]
 }
 # ======================== Setup AWS ALB Ingress Controller ====================
 resource "aws_iam_policy" "alb_iam_policy" {
@@ -129,12 +148,20 @@ resource "kubernetes_service_account" "alb_service_account" {
     }
   }
 
-  depends_on = [aws_iam_policy.alb_iam_policy]
+  automount_service_account_token = true
+
+  depends_on = [
+    null_resource.dependency,
+    aws_iam_policy.alb_iam_policy
+  ]
 }
 
 resource "kubectl_manifest" "alb_crds" {
-  yaml_body  = file("${path.module}/k8s_configs/alb_ingress_crds_v0_0_39.yaml")
-  depends_on = [kubernetes_service_account.alb_service_account]
+  yaml_body = file("${path.module}/k8s_configs/alb_ingress_crds_v0_0_39.yaml")
+  depends_on = [
+    null_resource.dependency,
+    kubernetes_service_account.alb_service_account
+  ]
 }
 
 resource "helm_release" "helm_aws_alb_controller" {
@@ -157,7 +184,7 @@ resource "helm_release" "helm_aws_alb_controller" {
 
   set {
     name  = "serviceAccount.name"
-    value = kubernetes_service_account.alb_service_account.name
+    value = kubernetes_service_account.alb_service_account.metadata[0].name
   }
 
   set {
@@ -170,5 +197,8 @@ resource "helm_release" "helm_aws_alb_controller" {
     value = data.aws_eks_cluster.eks_cluster.vpc_config[0].vpc_id
   }
 
-  depends_on = [kubectl_manifest.alb_crds]
+  depends_on = [
+    null_resource.dependency,
+    kubectl_manifest.alb_crds
+  ]
 }
